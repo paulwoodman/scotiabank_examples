@@ -1,0 +1,53 @@
+---
+- name: Includes sat vars based on OS
+  ansible.builtin.include_vars:
+     file: '{{distribution_major_version}}.yaml'
+
+- name: Unregister from Subscription Manager, if registered
+  redhat_subscription:
+    state: absent
+
+- name: subscription-manager clean
+  command: subscription-manager clean
+
+- name: Download and install katello-ca-consumer RPM from satellite server
+  ansible.builtin.yum:
+    name: "{{ satellite_katello_rpm_download_url }}"
+    state: present
+    validate_certs: no
+    disable_gpg_check: yes      # bug in rhel 8 requires (or did require) overriding gpg check 
+
+- name: Register Subscripton Manager to Satellite Server
+  block:
+    - name: Attempt registration
+        community.general.redhat_subscription:
+        state: present
+        activationkey: "{{ satellite_activation_key }}"
+        org_id: "{{ satellite_org_id }}"
+        auto_attach: yes
+        force_register: yes
+        server_insecure: yes
+      register: result
+      
+  rescue:
+    - name: If result.rc exists and is 0 or 1, then continue play
+      assert:
+        that: 
+          - result.rc is defined
+          - (result.rc == 1 or result.rc == 0)
+        fail_msg: "{{ result.stderr }}"
+        success_msg: "Continuing because of expected result"
+
+- name: yum clean all 
+  command: yum clean all
+
+- name: install insights client
+    ansible.builtin.yum:
+    name: insights-client
+    state: present
+
+- name: configure insights client
+  command: insights-client --register
+
+- name: subscription-manager refresh
+  command: subscription-manager refresh

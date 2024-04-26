@@ -1,0 +1,30 @@
+---
+- name: check to see if server has package updates
+  ansible.builtin.shell: dnf list --updates | awk 'f;/Available Upgrades/{f=1}' | awk '{ print $1}'
+  register: updates
+
+- name: display count
+  ansible.builtin.debug:
+    msg: "Found {{ updates.stdout_lines | length }} packages to be updated"
+
+- block:
+   - name: Update server if packages are available
+     ansible.builtin.dnf:
+       name: "*"
+       state: latest
+     when: updates.stdout_lines | length > 0
+
+   - name: Check of the server requires a reboot after patching
+     ansible.builtin.shell: needs-restarting -r 
+     register: reboot_required
+     ignore_errors: True
+     
+   - name: print reboot status
+     ansible.builtin.debug:
+       msg: Server requires a reboot
+     when: reboot_required.rc !=0 
+
+- name: Reboot the server if required
+  ansible.builtin.reboot:
+    msg: "Reboot initiated by Ansible"
+  when: reboot_required.rc == 1  
